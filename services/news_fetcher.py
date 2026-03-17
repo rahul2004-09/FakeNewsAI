@@ -1,41 +1,24 @@
 import requests
-
-# Your NewsAPI key
-API_KEY = "045e447cd58147ed9d2ff2dfb628f8e0"
+from bs4 import BeautifulSoup
 
 def search_news(query):
 
-    url = "https://newsapi.org/v2/everything"
+    url = f"https://news.google.com/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
 
-    params = {
-        "q": query,
-        "language": "en",
-        "sortBy": "publishedAt",
-        "pageSize": 5,
-        "apiKey": API_KEY
-    }
+    response = requests.get(url)
 
-    try:
-        response = requests.get(url, params=params)
-        data = response.json()
+    soup = BeautifulSoup(response.text, "html.parser")
 
-        if data["status"] != "ok":
-            print("Error fetching news:", data)
-            return []
+    articles = []
 
-        articles = data["articles"]
+    for item in soup.select("article")[:5]:
+        title = item.text
+        link = "https://news.google.com" + item.find("a")["href"][1:]
 
-        results = []
+        articles.append({
+            "title": title,
+            "description": "Google News result",
+            "url": link
+        })
 
-        for article in articles:
-            results.append({
-                "title": article["title"],
-                "description": article["description"],
-                "url": article["url"]
-            })
-
-        return results
-
-    except Exception as e:
-        print("Error:", e)
-        return []
+    return articles
