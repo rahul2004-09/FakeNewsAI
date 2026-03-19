@@ -1,55 +1,103 @@
 import streamlit as st
 import pickle
 import re
+import requests
 
 # Import services
 from services.claim_extractor import extract_claim
-from services.news_fetcher import search_news
 from services.similarity_checker import check_similarity
 
 # ================================
-# Smart Keyword Extraction (NO spaCy)
+# 🔥 SERP API CONFIG (GOOGLE SEARCH)
 # ================================
-def extract_keywords(text):
-    text = text.lower()
-    text = re.sub(r"[^\w\s]", "", text)
+API_KEY = "b8a51003cf6cc1690d87b32db8e2f6d98d32184b838c5e058ba7b21ab8094a80"
 
-    words = text.split()
+def google_search(query):
+    url = "https://serpapi.com/search.json"
 
-    stopwords = {
-        "is","are","was","were","the","a","an","and","or",
-        "to","of","in","on","at","after","due","have","has",
-        "had","will","been","this","that","with","from","by"
+    params = {
+        "q": query,
+        "api_key": API_KEY,
+        "engine": "google",
+        "num": 5
     }
 
-    keywords = [w for w in words if w not in stopwords]
+    response = requests.get(url, params=params)
+    data = response.json()
 
-    # keep meaningful words (length filter helps)
-    keywords = [w for w in keywords if len(w) > 3]
+    articles = []
 
-    return " ".join(keywords[:6])
+    if "organic_results" in data:
+        for item in data["organic_results"][:5]:
+            articles.append({
+                "title": item.get("title"),
+                "description": item.get("snippet"),
+                "url": item.get("link")
+            })
+
+    return articles
 
 
 # ================================
-# Multi Query Builder
+# Source Detection
+# ================================
+def get_source(url):
+    url = url.lower()
+
+    if "reuters" in url:
+        return "Reuters (High Trust)"
+    elif "bbc" in url:
+        return "BBC (High Trust)"
+    elif "ndtv" in url:
+        return "NDTV (Medium Trust)"
+    elif "cnn" in url:
+        return "CNN (High Trust)"
+    else:
+        return "Unknown Source"
+
+
+# ================================
+# 🔥 SIMPLE QUERY BUILDER (FIXED)
 # ================================
 def build_search_queries(text):
-    base = extract_keywords(text)
+    text = text.lower()
+    clean_text = re.sub(r"[^\w\s]", "", text)
+
+    words = clean_text.split()
+
+    simple_query = " ".join(words[:2])  # 🔥 KEY FIX
 
     queries = [
-        base,
-        base + " news",
-        base + " latest",
-        " ".join(base.split()[:3]),  # shorter query
-        text[:60]  # fallback full sentence
+        simple_query,
+        simple_query + " news",
+        clean_text,
+        clean_text + " news",
     ]
 
-    return list(set(queries))  # remove duplicates
+    return list(set(queries))
+
+
+# ================================
+# Reasoning
+# ================================
+def generate_reasoning(claim, articles, avg_score):
+
+    if len(articles) == 0:
+        return "⚠️ No strong evidence found. Try using a more detailed sentence."
+
+    if avg_score < 0.2:
+        return "⚠️ Articles are not closely related to the claim."
+
+    if avg_score < 0.4:
+        return "⚠️ Some related information found, but not strongly confirmed."
+
+    return "✅ Multiple sources support this claim."
 
 
 # Load ML model
 model = pickle.load(open("model/model.pkl", "rb"))
 vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
+
 
 # ================================
 # UI
@@ -57,9 +105,10 @@ vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
 st.set_page_config(page_title="Fake News Detection AI", layout="centered")
 
 st.title("📰 Fake News Detection & Fact-Checking AI")
-st.write("Paste a news article to verify it using real-time sources + AI model.")
+st.write("Now powered by Google Search + AI")
 
 news = st.text_area("Enter News Article")
+
 
 # ================================
 # MAIN LOGIC
@@ -71,26 +120,24 @@ if st.button("Analyze News"):
     
     else:
         try:
-            # ================================
-            # Step 1 — Extract Claim
-            # ================================
             claim = extract_claim(news)
 
             st.subheader("🧠 Extracted Claim")
             st.info(claim)
 
-            # ================================
-            # Step 2 — Search News
-            # ================================
-            st.subheader("🌍 Real News Analysis (Primary)")
+            st.subheader("🌍 Real News Analysis (Google Powered)")
 
             queries = build_search_queries(claim)
 
             all_articles = []
 
             for q in queries:
-                st.write(f"🔎 Trying Query: {q}")
-                results = search_news(q)
+                st.write(f"🔎 Searching: {q}")
+                results = google_search(q)
+
+                # 🔥 DEBUG (IMPORTANT)
+                st.write(f"Results found: {len(results)}")
+
                 all_articles.extend(results)
 
             # Remove duplicates
@@ -98,21 +145,18 @@ if st.button("Analyze News"):
             articles = list(unique_articles.values())[:5]
 
             if len(articles) == 0:
-                st.warning("⚠️ No reliable sources found.")
-                st.info("This may be breaking news or not widely reported yet.")
+                avg_score = 0
+                st.warning("⚠️ No results found. Try a different sentence.")
 
             else:
-                # ================================
-                # Step 3 — Similarity Analysis
-                # ================================
                 scores = check_similarity(claim, articles)
 
-                # Filter irrelevant articles
+                # 🔥 RELAXED FILTERING
                 filtered_articles = []
                 filtered_scores = []
 
                 for article, score in zip(articles, scores):
-                    if score > 0.2:
+                    if score > 0.15:
                         filtered_articles.append(article)
                         filtered_scores.append(score)
 
@@ -120,58 +164,65 @@ if st.button("Analyze News"):
                 scores = filtered_scores
 
                 if len(articles) == 0:
-                    st.warning("⚠️ No relevant news found.")
-                    st.info("The claim may be unverified or not widely reported.")
+                    avg_score = 0
+                    st.warning("⚠️ No relevant matches after filtering.")
 
                 else:
-                    # Show Articles
+                    best_idx = scores.index(max(scores))
+                    best_article = articles[best_idx]
+
+                    st.subheader("🏆 Top Matching Article")
+                    st.write(best_article["title"])
+                    st.write(f"📊 Similarity: {round(scores[best_idx],2)}")
+                    st.write(f"📰 Source: {get_source(best_article['url'])}")
+                    st.markdown(f"[Read Article]({best_article['url']})")
+
+                    st.write("---")
+
+                    st.subheader("📰 Related Articles")
+
                     for article in articles:
-                        st.write("### 📰", article["title"])
+                        st.write("###", article["title"])
                         st.write(article["description"])
+                        st.write(f"📰 Source: {get_source(article['url'])}")
                         st.markdown(f"[Read Full Article]({article['url']})")
                         st.write("---")
-
-                    st.subheader("🔍 Similarity Scores")
-
-                    for i, score in enumerate(scores):
-                        st.write(f"Article {i+1}: {round(score, 2)}")
 
                     avg_score = sum(scores) / len(scores)
 
                     st.info(f"📈 Average Similarity Score: {round(avg_score, 2)}")
 
-                    # ================================
-                    # Step 4 — Final Verdict
-                    # ================================
                     st.subheader("📊 Final Fact-Check Result")
 
                     if avg_score > 0.4:
-                        st.success(f"✅ VERIFIED REAL (Confidence: {round(avg_score*100,2)}%)")
-                        st.info("Supported by multiple trusted news sources.")
-
+                        st.success("✅ VERIFIED REAL")
                     elif avg_score > 0.2:
-                        st.warning(f"⚠️ PARTIALLY VERIFIED (Confidence: {round(avg_score*100,2)}%)")
-                        st.info("Some sources match but not strongly confirmed.")
-
+                        st.warning("⚠️ PARTIALLY VERIFIED")
                     else:
                         st.warning("⚠️ UNVERIFIED CLAIM")
-                        st.info("No strong supporting evidence found.")
 
-            # ================================
-            # Step 5 — ML Model (Secondary)
-            # ================================
-            st.subheader("🤖 AI Model Opinion (Secondary)")
+            # Explanation
+            reason = generate_reasoning(claim, articles, avg_score)
 
-            news_vector = vectorizer.transform([news])
-            prediction = model.predict(news_vector)
-            probability = model.predict_proba(news_vector)
+            st.subheader("🧠 Explanation")
+            st.info(reason)
 
-            confidence = max(probability[0]) * 100
+            # 🔥 FIX ML MODEL
+            st.subheader("🤖 AI Model Opinion")
 
-            if prediction[0] == 0:
-                st.error(f"Model Prediction: FAKE ({confidence:.2f}%)")
+            if len(news.split()) < 8:
+                st.warning("⚠️ Input too short for ML model.")
             else:
-                st.success(f"Model Prediction: REAL ({confidence:.2f}%)")
+                news_vector = vectorizer.transform([news])
+                prediction = model.predict(news_vector)
+                probability = model.predict_proba(news_vector)
+
+                confidence = max(probability[0]) * 100
+
+                if prediction[0] == 0:
+                    st.error(f"FAKE ({confidence:.2f}%)")
+                else:
+                    st.success(f"REAL ({confidence:.2f}%)")
 
         except Exception as e:
             st.error(f"Error occurred: {e}")
