@@ -102,12 +102,22 @@ vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
 # ================================
 # UI
 # ================================
-st.set_page_config(page_title="Fake News Detection AI", layout="centered")
+st.set_page_config(page_title="News Detection AI", layout="centered")
 
-st.title("📰 Fake News Detection & Fact-Checking AI")
+st.markdown(
+    "<h1 style='text-align:center;color:white;'>🧠 AI News Checker</h1>",
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    "<p style='text-align:center;'>Analyze news using AI + real-time Google search</p>",
+    unsafe_allow_html=True
+)
 st.write("Now powered by Google Search + AI")
 
-news = st.text_area("Enter News Article")
+st.subheader("📥 Input News ")
+
+news = st.text_area("Paste your news here...", height=150)
 
 
 # ================================
@@ -182,11 +192,28 @@ if st.button("Analyze News"):
                     st.subheader("📰 Related Articles")
 
                     for article in articles:
-                        st.write("###", article["title"])
-                        st.write(article["description"])
-                        st.write(f"📰 Source: {get_source(article['url'])}")
-                        st.markdown(f"[Read Full Article]({article['url']})")
-                        st.write("---")
+                        st.markdown(
+                            f"""
+                            <div style="
+                            padding:15px;
+                            border-radius:10px;
+                            border:1px solid #444;
+                            margin-bottom:12px;
+                            background-color:#1e1e1e;
+                            color:white;
+                            ">
+                            
+                            <h4 style="color:white;">📰 {article['title']}</h4>
+                            <p style="color:#ddd;">{article['description']}</p>
+                            <p style="color:#bbb;"><b>Source:</b> {get_source(article['url'])}</p>
+                            <a href="{article['url']}" target="_blank" style="color:#4CAF50;">
+                            🔗 Read Full Article
+                            </a>
+                            
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
 
                     avg_score = sum(scores) / len(scores)
 
@@ -208,7 +235,7 @@ if st.button("Analyze News"):
             st.info(reason)
 
             # 🔥 FIX ML MODEL
-            st.subheader("🤖 AI Model Opinion")
+            st.subheader("🤖 AI Model Opinion(trained with old dataset)")
 
             if len(news.split()) < 8:
                 st.warning("⚠️ Input too short for ML model.")
