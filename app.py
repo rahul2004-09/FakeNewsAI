@@ -105,7 +105,7 @@ vectorizer = pickle.load(open("model/vectorizer.pkl", "rb"))
 st.set_page_config(page_title="News Detection AI", layout="centered")
 
 st.markdown(
-    "<h1 style='text-align:center;color:white;'>🧠 AI News Checker</h1>",
+    "<h1 style='text-align:center;color:white;'>🧠 AI News Detector </h1>",
     unsafe_allow_html=True
 )
 
