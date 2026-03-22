@@ -219,7 +219,7 @@ if st.button("Analyze News"):
 
                     st.info(f"📈 Average Similarity Score: {round(avg_score, 2)}")
 
-                    st.subheader("📊 Final Fact-Check Result")
+                    st.subheader("📊 Final Result")
 
                     if avg_score > 0.4:
                         st.success("✅ VERIFIED REAL")
